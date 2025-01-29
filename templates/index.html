@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>تطبيق إضافة نص عربي على الصور</title>
+    <!-- Bootstrap CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- Flatpickr CSS -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+    <!-- Cairo Font -->
+    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <!-- Font Awesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <!-- Custom CSS -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+    <!-- Include Particles.js -->
+    <script src="https://cdn.jsdelivr.net/npm/particles.js@2.0.0/particles.min.js"></script>
+</head>
+<body>
+    <div id="particles-js"></div>
+    <!-- Main Content -->
+    <main class="container my-5">
+        <div class="card shadow">
+            <div class="card-body">
+                <form method="POST" enctype="multipart/form-data" id="image-form">
+                    <!-- Text Inputs -->
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="customer_name" class="form-label">اسم المشترك/اسم الشركة:</label>
+                                <input type="text" name="customer_name" id="customer_name" class="form-control" required>
+                            </div>
+                            <div class="mb-3">
+                                <label for="nationality" class="form-label">الجنسية</label>
+                                <input type="text" name="nationality" id="nationality" class="form-control" required>
+                            </div>
+                            <div class="mb-3">
+                                <label for="national_id" class="form-label">الرقم القومي</label>
+                                <input type="text" name="national_id" id="national_id" class="form-control" required>
+                            </div>
+                            <div class="mb-3">
+                                <label for="phone_num" class="form-label">رقم الهاتف</label>
+                                <input type="text" name="phone_num" id="phone_num" class="form-control" required>
+                            </div>
+                            <div class="mb-3">
+                                <label for="landline" class="form-label">رقم الارضي</label>
+                                <input type="text" name="landline" id="landline" class="form-control" required>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="central" class="form-label">السنترال</label>
+                                <input type="text" name="central" id="central" class="form-control" required>
+                            </div>
+                            <div class="mb-3">
+                                <label for="quota" class="form-label">التعريفة المتعاقد عليها</label>
+                                <input type="text" name="quota" id="quota" class="form-control" required>
+                            </div>
+                            <div class="mb-3">
+                                <label for="price" class="form-label">السعر</label>
+                                <input type="text" name="price" id="price" class="form-control" required>
+                            </div>
+                            <div class="mb-3">
+                                <label for="sales_name" class="form-label">اسم ممثل المبيعات</label>
+                                <input type="text" name="sales_name" id="sales_name" class="form-control" required>
+                            </div>
+                            <div class="mb-3">
+                                <label for="serial" class="form-label">الرقم المسلسل</label>
+                                <input type="text" name="serial" id="serial" class="form-control" required>
+                            </div>
+                        </div>
+                    </div>
+                    <!-- Date Input -->
+                    <div class="mb-3">
+                        <label for="date" class="form-label">التاريخ</label>
+                        <input type="text" name="date" id="date" class="form-control flatpickr" required>
+                    </div>
+                    <!-- Payment Frequency Radio Buttons -->
+                    <div class="mb-3">
+                        <label class="form-label">الدفع مقدما كل:</label>
+                        <div class="d-flex gap-3">
+                            <div class="form-check">
+                                <input class="form-check-input" type="radio" name="payment_frequency" id="month" value="month" required>
+                                <label class="form-check-label" for="month">شهر</label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="radio" name="payment_frequency" id="6_months" value="6_months">
+                                <label class="form-check-label" for="6_months">6 أشهر</label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="radio" name="payment_frequency" id="12_months" value="12_months">
+                                <label class="form-check-label" for="12_months">12 شهر</label>
+                            </div>
+                        </div>
+                    </div>
+
+
+                    <!-- File Uploads -->
+                    <div class="row">
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="stamp_image" class="form-label">صورة الختم:</label>
+                                <input type="file" name="stamp_image" id="stamp_image" class="form-control" required onchange="previewImage(event, 'stamp-preview')">
+                                <div class="preview mt-2" id="stamp-preview"></div>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="front_id" class="form-label">صورة البطاقة (الامامي):</label>
+                                <input type="file" name="front_id" id="front_id" class="form-control" required onchange="previewImage(event, 'front-preview')">
+                                <div class="preview mt-2" id="front-preview"></div>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="back_id" class="form-label">صورة البطاقة (الخلفي):</label>
+                                <input type="file" name="back_id" id="back_id" class="form-control" required onchange="previewImage(event, 'back-preview')">
+                                <div class="preview mt-2" id="back-preview"></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Submit Button -->
+                    <button type="submit" id="generate-button" class="btn btn-primary w-100 py-2">
+                        <i class="fas fa-magic me-2"></i> إنشاء الصور
+                    </button>
+
+                    <!-- Progress Bar -->
+                    <div id="progress" class="progress mt-3">
+                        <div id="progress-bar" class="progress-bar" role="progressbar" style="width: 0%;"></div>
+                    </div>
+                </form>
+
+                <!-- Generated Image Section -->
+                {% if image_generated %}
+                    <div class="result-section mt-4">
+                        <h2 class="text-center mb-4">الصور المولدة:</h2>
+                        <div class="row">
+                            <div class="col-md-6 mb-4">
+                                <div class="card">
+                                    <img src="{{ url_for('static', filename=image_path_1) }}" alt="الصورة المولدة 1" class="card-img-top">
+                                    <div class="card-body text-center">
+                                        <a href="{{ url_for('download', filename='output_1.jpg') }}" download class="btn btn-success">
+                                            <i class="fas fa-download me-2"></i> تحميل الصورة 1
+                                        </a>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-6 mb-4">
+                                <div class="card">
+                                    <img src="{{ url_for('static', filename=image_path_2) }}" alt="الصورة المولدة 2" class="card-img-top">
+                                    <div class="card-body text-center">
+                                        <a href="{{ url_for('download', filename='output_2.jpg') }}" download class="btn btn-success">
+                                            <i class="fas fa-download me-2"></i> تحميل الصورة 2
+                                        </a>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+    </main>
+
+    <!-- Footer -->
+    <footer class="footer mt-auto py-4 bg-light">
+        <div class="container text-center">
+            <p class="mb-2">Made By Raafat Sami ❤️</p>
+            <a href="https://wa.me/201011508719" target="_blank" class="btn btn-outline-success">
+                <i class="fab fa-whatsapp me-2"></i> تواصل معنا عبر واتساب
+            </a>
+        </div>
+    </footer>
+
+    <!-- Bootstrap JS -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <!-- Flatpickr JS -->
+    <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+    <!-- Custom JS -->
+    <script>
+        // Initialize Flatpickr for the date input
+        flatpickr("#date", {
+            dateFormat: "Y-m-d",
+            defaultDate: "today",
+        });
+
+        // Function to preview uploaded images
+        function previewImage(event, previewId) {
+            const file = event.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    const preview = document.getElementById(previewId);
+                    preview.innerHTML = `<img src="${e.target.result}" alt="Preview" class="preview-image img-thumbnail">`;
+                };
+                reader.readAsDataURL(file);
+            }
+        }
+
+        // Show progress bar while generating the image
+        document.getElementById('image-form').addEventListener('submit', function() {
+            const progressBar = document.getElementById('progress-bar');
+            progressBar.style.width = '0%';
+            progressBar.classList.remove('bg-danger');
+            progressBar.classList.add('bg-success');
+
+            let width = 0;
+            const interval = setInterval(function() {
+                if (width >= 100) {
+                    clearInterval(interval);
+                } else {
+                    width += 10;
+                    progressBar.style.width = width + '%';
+                }
+            }, 300);
+        });
+
+        // Set default values for inputs and default image for stamp
+        document.addEventListener('DOMContentLoaded', function() {
+            // Default payment frequency
+            document.getElementById('serial').value = '0985836';
+            document.getElementById('sales_name').value = 'محمد حمادة جابر';
+            document.getElementById('nationality').value = 'مصري';
+            document.getElementById('month').checked = true;
+
+            // Default date (today)
+            document.getElementById('date').value = new Date().toISOString().split('T')[0];
+
+            // Default stamp image
+            fetch("{{ url_for('static', filename='default_stamp.jpg') }}")
+                .then(response => response.blob())
+                .then(blob => {
+                    const defaultStampImage = new File([blob], 'default_stamp.jpg', { type: 'image/jpeg' });
+                    const dataTransfer = new DataTransfer();
+                    dataTransfer.items.add(defaultStampImage);
+                    document.getElementById('stamp_image').files = dataTransfer.files;
+
+                    // Preview the default stamp image
+                    const reader = new FileReader();
+                    reader.onload = function(e) {
+                        document.getElementById('stamp-preview').innerHTML = `<img src="${e.target.result}" alt="Preview" class="preview-image img-thumbnail">`;
+                    };
+                    reader.readAsDataURL(defaultStampImage);
+                })
+                .catch(error => console.error('Error loading default stamp image:', error));
+        });
+    </script>
+    <script>
+        particlesJS('particles-js', {
+            "particles": {
+                "number": {
+                    "value": 100,
+                    "density": {
+                        "enable": true,
+                        "value_area": 800
+                    }
+                },
+                "color": {
+                    "value": ["#ff0000", "#00ff00", "#0000ff", "#ffff00", "#ff00ff", "#00ffff"]
+                },
+                "shape": {
+                    "type": "circle",
+                    "stroke": {
+                        "width": 0,
+                        "color": "#000000"
+                    }
+                },
+                "opacity": {
+                    "value": 0.6,
+                    "anim": {
+                        "enable": true,
+                        "speed": 1,
+                        "opacity_min": 0.3
+                    }
+                },
+                "size": {
+                    "value": 4,
+                    "random": true
+                },
+                "move": {
+                    "enable": true,
+                    "speed": 1,
+                    "direction": "bottom",
+                    "random": false,
+                    "straight": false,
+                    "out_mode": "out"
+                }
+            },
+            "interactivity": {
+                "events": {
+                    "onhover": {
+                        "enable": false
+                    },
+                    "onclick": {
+                        "enable": false
+                    }
+                }
+            },
+            "retina_detect": true
+        });
+    </script>
+</body>
+</html>
