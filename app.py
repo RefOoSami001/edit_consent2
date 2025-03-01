@@ -1,290 +1,176 @@
-from flask import Flask, request, render_template, send_file
-import matplotlib
-matplotlib.use('Agg')  # Use the 'Agg' backend
-import matplotlib.pyplot as plt
-from matplotlib import font_manager
-import arabic_reshaper
-from bidi.algorithm import get_display
-from PIL import Image, ImageFilter, ImageOps, ImageEnhance
-import numpy as np
-import os
-from io import BytesIO
+from flask import Flask, render_template, request, Response, stream_with_context
+import requests
+import re
+import json
 
 app = Flask(__name__)
 
-# Define the upload folder
-UPLOAD_FOLDER = 'static/uploads'
-if not os.path.exists(UPLOAD_FOLDER):
-    os.makedirs(UPLOAD_FOLDER ,exist_ok=True)
+def posts_extractor(group_id, cookie_string, user_end_cursor=None):
+    cookies = {}
+    for cookie in cookie_string.split(";"):
+        if "=" in cookie:
+            key, value = cookie.strip().split("=", 1)
+            cookies[key] = value
 
-app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
+    headers = {
+        'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+        'accept-language': 'ar-EG,ar;q=0.9,en-US;q=0.8,en;q=0.7',
+        'cache-control': 'max-age=0',
+        'dpr': '1.25',
+        'priority': 'u=0, i',
+        'sec-ch-prefers-color-scheme': 'dark',
+        'sec-ch-ua': '"Not(A:Brand";v="99", "Google Chrome";v="133", "Chromium";v="133"',
+        'sec-ch-ua-full-version-list': '"Not(A:Brand";v="99.0.0.0", "Google Chrome";v="133.0.6943.127", "Chromium";v="133.0.6943.127"',
+        'sec-ch-ua-mobile': '?0',
+        'sec-ch-ua-model': '""',
+        'sec-ch-ua-platform': '"Windows"',
+        'sec-ch-ua-platform-version': '"19.0.0"',
+        'sec-fetch-dest': 'document',
+        'sec-fetch-mode': 'navigate',
+        'sec-fetch-site': 'same-origin',
+        'sec-fetch-user': '?1',
+        'upgrade-insecure-requests': '1',
+        'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36',
+        'viewport-width': '744',
+    }
 
-# Path to the static base images
-BASE_IMAGE_PATH_1 = os.path.join('static', 'base_image_1.jpg')  # For the first app
-BASE_IMAGE_PATH_2 = os.path.join('static', 'base_image_2.jpg')  # For the second app
+    params = {
+        'locale': 'ar_AR',
+    }
 
-def add_arabic_text_to_image(ax, text, x, y, font_path, font_size, text_color, letter_spacing=None, alpha=1.0, noise=False):
-    """
-    Adds Arabic text to an image at specified coordinates with optional letter spacing and noise effect.
-    """
-    reshaped_text = arabic_reshaper.reshape(text)
-    bidi_text = get_display(reshaped_text)
-    font_prop = font_manager.FontProperties(fname=font_path, size=font_size)
-
-    if noise:
-        for _ in range(10):
-            noise_alpha = alpha * np.random.uniform(0.3, 0.6)
-            noise_x_offset = x + np.random.uniform(-1, 1)
-            noise_y_offset = y + np.random.uniform(-1, 1)
-            ax.text(
-                x=noise_x_offset, y=noise_y_offset, s=bidi_text,
-                fontproperties=font_prop, color=text_color,
-                alpha=noise_alpha, zorder=-1,
-            )
-
-    if letter_spacing is not None:
-        x_offset = x
-        for char in bidi_text:
-            ax.text(
-                x=x_offset, y=y, s=char,
-                fontproperties=font_prop, color=text_color,
-                alpha=alpha,
-            )
-            x_offset += letter_spacing
+    response = requests.get(f'https://www.facebook.com/groups/{group_id}', params=params, cookies=cookies, headers=headers)
+    response_text = response.text
+    av = re.search(r"__user=(\d+)", str(response_text)).group(1)
+    __hs = re.search(r'"haste_session":"(.*?)",', str(response_text)).group(1)
+    __rev = re.search(r'"haste_session":"(.*?)",', str(response_text)).group(1)
+    __hsi = re.search(r'"hsi":"(.*?)",', str(response_text)).group(1)
+    fb_dtsg = re.search(r'"DTSGInitialData",\[\],{"token":"(.*?)"', str(response_text)).group(1)
+    jazoest = re.search(r'&jazoest=(.*?)",', str(response_text)).group(1)
+    lsd = re.search(r'"LSD",\[\],{"token":"(.*?)"', str(response_text)).group(1)
+    __spin_r = re.search(r'"__spin_r":(.*?),', str(response_text)).group(1)
+    __spin_t = re.search(r'"__spin_t":(.*?),', str(response_text)).group(1)
+    # Determine the end_cursor
+    if user_end_cursor:
+        end_cursor_value = user_end_cursor  # Use the user-provided cursor
+        print(f'use the user cursor{end_cursor_value}')
     else:
-        ax.text(
-            x=x, y=y, s=bidi_text,
-            fontproperties=font_prop, color=text_color,
-            alpha=alpha,
-        )
+        end_cursor_value = re.search(r'{"page_info":{"end_cursor":"(.*?)"', response_text)
+        end_cursor_value = end_cursor_value.group(1) if end_cursor_value else None  # Handle case where it's not found
+    while True:
+        headers = {
+            'accept': '*/*',
+            'accept-language': 'ar-EG,ar;q=0.9,en-US;q=0.8,en;q=0.7',
+            'content-type': 'application/x-www-form-urlencoded',
+            'origin': 'https://www.facebook.com',
+            'priority': 'u=1, i',
+            'referer': f'https://www.facebook.com/groups/{group_id}?locale=ar_AR',
+            'sec-ch-prefers-color-scheme': 'dark',
+            'sec-ch-ua': '"Not(A:Brand";v="99", "Google Chrome";v="133", "Chromium";v="133"',
+            'sec-ch-ua-full-version-list': '"Not(A:Brand";v="99.0.0.0", "Google Chrome";v="133.0.6943.127", "Chromium";v="133.0.6943.127"',
+            'sec-ch-ua-mobile': '?0',
+            'sec-ch-ua-model': '""',
+            'sec-ch-ua-platform': '"Windows"',
+            'sec-ch-ua-platform-version': '"19.0.0"',
+            'sec-fetch-dest': 'empty',
+            'sec-fetch-mode': 'cors',
+            'sec-fetch-site': 'same-origin',
+            'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36',
+            'x-asbd-id': '359341',
+            'x-fb-friendly-name': 'GroupsCometFeedRegularStoriesPaginationQuery',
+            'x-fb-lsd': lsd,
+        }
 
-    return ax
+        data = {
+            'av': av,
+            '__aaid': '0',
+            '__user': av,
+            '__a': '1',
+            '__req': 'o',
+            '__hs': __hs,
+            'dpr': '1',
+            '__ccg': 'GOOD',
+            '__rev': __spin_r,
+            '__hsi': __hsi,
+            '__comet_req': '15',
+            'locale': 'ar_AR',
+            'fb_dtsg': fb_dtsg,
+            'jazoest': jazoest,
+            'lsd': lsd,
+            '__spin_r': __spin_r,
+            '__spin_b': 'trunk',
+            '__spin_t': __spin_t,
+            'fb_api_caller_class': 'RelayModern',
+            'fb_api_req_friendly_name': 'GroupsCometFeedRegularStoriesPaginationQuery',
+            'variables': '{"count":3,"cursor":"'+end_cursor_value+'","feedLocation":"GROUP","feedType":"DISCUSSION","feedbackSource":0,"focusCommentID":null,"privacySelectorRenderLocation":"COMET_STREAM","renderLocation":"group","scale":1,"sortingSetting":"TOP_POSTS","stream_initial_count":1,"useDefaultActor":false,"id":"'+group_id+'","__relay_internal__pv__GHLShouldChangeAdIdFieldNamerelayprovider":false,"__relay_internal__pv__GHLShouldChangeSponsoredDataFieldNamerelayprovider":false,"__relay_internal__pv__IsWorkUserrelayprovider":false,"__relay_internal__pv__CometFeedStoryDynamicResolutionPhotoAttachmentRenderer_experimentWidthrelayprovider":500,"__relay_internal__pv__CometImmersivePhotoCanUserDisable3DMotionrelayprovider":false,"__relay_internal__pv__WorkCometIsEmployeeGKProviderrelayprovider":false,"__relay_internal__pv__IsMergQAPollsrelayprovider":false,"__relay_internal__pv__FBReelsMediaFooter_comet_enable_reels_ads_gkrelayprovider":false,"__relay_internal__pv__CometUFIReactionsEnableShortNamerelayprovider":false,"__relay_internal__pv__CometUFIShareActionMigrationrelayprovider":true,"__relay_internal__pv__StoriesArmadilloReplyEnabledrelayprovider":true,"__relay_internal__pv__EventCometCardImage_prefetchEventImagerelayprovider":false}',
+            'server_timestamps': 'true',
+            'doc_id': '9215019328566240',
+        }
 
-def overlay_image(base_image, overlay_image_path, position, size):
-    """
-    Overlays an image on top of the base image at the specified position and size.
-    """
-    overlay_image = Image.open(overlay_image_path).convert("RGBA")
-    overlay_image = overlay_image.resize(size)
-    base_image = base_image.copy().convert("RGBA")
-    base_image.paste(overlay_image, position, overlay_image)
-    return base_image
+        response = requests.post('https://www.facebook.com/api/graphql/', cookies=cookies, headers=headers, data=data)
+        feed_data = re.findall(r'"data":\{"node":(.*?)},"extensions":\{', response.text, re.DOTALL)
+        for i, post_data in enumerate(feed_data, 1):
+            post_dict = {}
+            if i in [2, 3]:  
+                post_data  = re.sub(r',\s*"cursor":".*?"', '', post_data, flags=re.DOTALL)  # Removes "cursor" keys
+                post_data = json.loads(post_data)
 
-def add_scanned_effects(image):
-    """
-    Adds scanned effects like ink splashes, dirt, and paper texture to the image while keeping it colorful.
-    """
-    # Add paper texture (ensure the texture is in color)
-    paper_texture = Image.open("static/paper_texture2.jpg").convert("RGB")  # Load a paper texture image in color
-    paper_texture = paper_texture.resize(image.size)
-    image = Image.blend(image.convert("RGB"), paper_texture, alpha=0.03)  # Blend the texture with the image
+                post_dict['actor_name'] = post_data['comet_sections']['content']['story']['actors'][0]['name']
+                post_dict['actor_id'] = post_data['comet_sections']['content']['story']['actors'][0]['url']
+                post_dict['post_id'] = post_data['comet_sections']['content']['story']['wwwURL']
+                try: post_dict['creation_time'] = post_data['comet_sections']['context_layout']['story']['comet_sections']['metadata'][1]['story']['creation_time']
+                except: post_dict['creation_time'] = post_data['comet_sections']['context_layout']['story']['comet_sections']['metadata'][0]['story']['creation_time']
+                try: post_dict['caption'] = post_data['comet_sections']['content']['story']['comet_sections']['message']['story']['message']['text']
+                except: post_dict['caption'] = 'No Caption'
+                post_dict['comment_count'] = post_data['comet_sections']['feedback']['story']['story_ufi_container']['story']['feedback_context']['feedback_target_with_context']['comment_rendering_instance']['comments']['total_count']
+                post_dict['reaction_count'] = post_data['comet_sections']['feedback']['story']['story_ufi_container']['story']['feedback_context']['feedback_target_with_context']['comet_ufi_summary_and_actions_renderer']['feedback']['reaction_count']['count']
+                post_dict['share_count'] = post_data ['comet_sections']['feedback']['story']['story_ufi_container']['story']['feedback_context']['feedback_target_with_context']['comet_ufi_summary_and_actions_renderer']['feedback']['share_count']['count']
+                post_dict['profile_pic'] = post_data ['comet_sections']['context_layout']['story']['comet_sections']['actor_photo']['story']['actors'][0]['profile_picture']['uri']
+                if 'all_subattachments' in post_data or 'placeholder_image' in str(post_data):
+                    post_dict['attachment'] = True
+                else:
+                    post_dict['attachment'] = False
+            else:
+                post_data = json.loads(post_data)
+                post_dict['actor_name'] = post_data['group_feed']['edges'][0]['node']['comet_sections']['content']['story']['actors'][0]['name']
+                post_dict['actor_id'] = post_data['group_feed']['edges'][0]['node']['comet_sections']['content']['story']['actors'][0]['url']
+                post_dict['post_id'] = post_data ['group_feed']['edges'][0]['node']['comet_sections']['content']['story']['wwwURL']
+                try: post_dict['creation_time'] = post_data['group_feed']['edges'][0]['node']['comet_sections']['context_layout']['story']['comet_sections']['metadata'][1]['story']['creation_time']
+                except: post_dict['creation_time'] = post_data['group_feed']['edges'][0]['node']['comet_sections']['context_layout']['story']['comet_sections']['metadata'][0]['story']['creation_time']
+                try: post_dict['caption'] = post_data['group_feed']['edges'][0]['node']['comet_sections']['content']['story']['comet_sections']['message']['story']['message']['text']
+                except: post_dict['caption'] = 'No Caption'
+                post_dict['comment_count'] = post_data['group_feed']['edges'][0]['node']['comet_sections']['feedback']['story']['story_ufi_container']['story']['feedback_context']['feedback_target_with_context']['comment_rendering_instance']['comments']['total_count']
+                post_dict['reaction_count'] = post_data['group_feed']['edges'][0]['node']['comet_sections']['feedback']['story']['story_ufi_container']['story']['feedback_context']['feedback_target_with_context']['comet_ufi_summary_and_actions_renderer']['feedback']['reaction_count']['count']
+                post_dict['share_count'] = post_data['group_feed']['edges'][0]['node']['comet_sections']['feedback']['story']['story_ufi_container']['story']['feedback_context']['feedback_target_with_context']['comet_ufi_summary_and_actions_renderer']['feedback']['share_count']['count']
+                post_dict['profile_pic'] = post_data ['group_feed']['edges'][0]['node']['comet_sections']['context_layout']['story']['comet_sections']['actor_photo']['story']['actors'][0]['profile_picture']['uri']
+                if 'all_subattachments' in post_data or 'placeholder_image' in str(post_data):
+                    post_dict['attachment'] = True
+                else:
+                    post_dict['attachment'] = False
+            # Yield the post data as it's obtained
+            yield f"data: {json.dumps(post_dict)}\n\n"
 
-    # Add a slight blur to simulate scanning imperfections
-    image = image.filter(ImageFilter.GaussianBlur(radius=0.5))
+        new_cursor = re.search(r'"end_cursor":"(.*?)"', response.text)
+        end_cursor_value = new_cursor.group(1) if new_cursor else None
+        if not end_cursor_value:
+            yield f"data: {json.dumps({'last_cursor': last_cursor, 'message': 'No more cursor'})}\n\n"
+            break  # Stop fetching if no new cursor
+        last_cursor = end_cursor_value  # Update last known cursor
 
-    # Adjust brightness and contrast
-    enhancer = ImageEnhance.Brightness(image)
-    image = enhancer.enhance(0.9)  # Reduce brightness slightly
-    enhancer = ImageEnhance.Contrast(image)
-    image = enhancer.enhance(1.4)  # Increase contrast slightly
-
-    return image
-
-def generate_image_1(base_image_path, text_elements, output_path):
-    """
-    Generates the first image with Arabic text overlaid.
-    """
-    image = Image.open(base_image_path)
-
-    # Create a figure and axis
-    fig, ax = plt.subplots()
-    ax.imshow(image)
-
-    # Add all text elements to the image
-    for element in text_elements:
-        ax = add_arabic_text_to_image(ax, **element)
-
-    # Hide axes
-    ax.axis("off")
-
-    # Save the image to a BytesIO object
-    img_buffer = BytesIO()
-    plt.savefig(img_buffer, format='jpg', bbox_inches="tight", pad_inches=0, dpi=300)
-    img_buffer.seek(0)
-    plt.close('all')  # Close all figures to free up memory
-
-    # Save the final image
-    with open(output_path, 'wb') as f:
-        f.write(img_buffer.getvalue())
-
-    return output_path
-
-def generate_image_2(base_image_path, stamp_image_path, front_id_path, back_id_path, customer_name, central_name, date, phone_number):
-    """
-    Generates the second image with overlays and text.
-    """
-    base_image = Image.open(base_image_path).convert("RGBA")
-
-    # Overlay stamp image
-    base_image = overlay_image(base_image, stamp_image_path, (1900, 2100), (600, 290))
-
-    # Overlay front ID image
-    base_image = overlay_image(base_image, front_id_path, (250, 2500), (1000, 700))
-
-    # Overlay back ID image
-    base_image = overlay_image(base_image, back_id_path, (1400, 2500), (1000, 700))
-
-    # Format the date: single-digit month and two spaces between day, month, and year
-    day, month, year = date.split("-")
-    formatted_date = f"{day}    {int(month)}    {year}"  # Convert month to int to remove leading zero
-
-    # Define text elements
-    text_elements = [
-        {"text": formatted_date, "x": 1970, "y": 900, "font_path": "static/fonts/Molhim.ttf", "font_size": 7, "text_color": "#140a72", "alpha": 1, "noise": False},
-        {"text": customer_name, "x": 1430, "y": 1360, "font_path": "static/fonts/Dima Font.ttf", "font_size": 6, "text_color": "#140a72", "alpha": 1, "noise": False},
-        {"text": central_name, "x": 1520, "y": 1510, "font_path": "static/fonts/Dima Font.ttf", "font_size": 6.2, "text_color": "#140a72", "alpha": 1, "noise": False},
-        {"text": phone_number, "x": 300, "y": 1360, "font_path": "static/fonts/Molhim.ttf", "font_size": 8.5, "text_color": "#140a72", "alpha": 1, "noise": False},
-        {"text": phone_number, "x": 1020, "y": 2160, "font_path": "static/fonts/Molhim.ttf", "font_size": 10, "text_color": "#140a72", "alpha": 1, "noise": False},
-        {"text": customer_name, "x": 170, "y": 2180, "font_path": "static/fonts/alfont_com_Digi-Maryam-Regular.ttf", "font_size": 9, "text_color": "#140a72", "alpha": 1, "noise": False},
-    ]
-
-    # Create a figure and axis
-    fig, ax = plt.subplots()
-    ax.imshow(base_image)
-
-    # Add all text elements to the image
-    for element in text_elements:
-        ax = add_arabic_text_to_image(ax, **element)
-
-    # Hide axes
-    ax.axis("off")
-
-    # Save the image to a BytesIO object
-    img_buffer = BytesIO()
-    plt.savefig(img_buffer, format='jpg', bbox_inches="tight", pad_inches=0, dpi=300)
-    img_buffer.seek(0)
-    plt.close('all')  # Close all figures to free up memory
-
-    # Convert the BytesIO object to a PIL image
-    final_image = Image.open(img_buffer)
-
-    # Add scanned effects
-    # final_image = add_scanned_effects(final_image)
-
-    # Save the final image to a new BytesIO object
-    final_buffer = BytesIO()
-    final_image.save(final_buffer, format='JPEG')
-    final_buffer.seek(0)
-
-    return final_buffer
-
-@app.route('/', methods=['GET', 'POST'])
+@app.route('/')
 def index():
-    if request.method == 'POST':
-        try:
-            # Get form data for both apps
-            customer_name = request.form['customer_name']
-            nationality = request.form['nationality']
-            national_id = request.form['national_id']
-            phone_num = request.form['phone_num']
-            landline = request.form['landline']
-            central = request.form['central']
-            quota = request.form['quota']
-            price = request.form['price']
-            sales_name = request.form['sales_name']
-            payment_frequency = request.form['payment_frequency']
-            date = request.form['date']
-            stamp_image = request.files['stamp_image']
-            front_id = request.files['front_id']
-            back_id = request.files['back_id']
-            serial = request.form['serial']
+    return render_template('index.html')
 
-            # Validate required fields
-            if not all([customer_name, nationality, national_id, phone_num, landline, central, quota, price, sales_name, payment_frequency, date, stamp_image, front_id, back_id]):
-                return "All fields are required!", 400
+@app.route('/extract', methods=['GET'])
+def extract():
+    group_id = request.args.get('group_id')
+    cookie_string = request.args.get('cookie_string')
+    user_end_cursor = request.args.get('end_cursor')  # Optional cursor from user
+    
+    return Response(
+        stream_with_context(posts_extractor(group_id, cookie_string, user_end_cursor)),
+        content_type='text/event-stream'
+    )
 
-            # Save uploaded files
-            stamp_image_path = os.path.join(app.config['UPLOAD_FOLDER'], stamp_image.filename)
-            front_id_path = os.path.join(app.config['UPLOAD_FOLDER'], front_id.filename)
-            back_id_path = os.path.join(app.config['UPLOAD_FOLDER'], back_id.filename)
-
-            stamp_image.save(stamp_image_path)
-            front_id.save(front_id_path)
-            back_id.save(back_id_path)
-            
-            day, month, year = date.split("-")
-            formatted_date = f"{day}    {int(month)}    {year}"  # Convert month to int to remove leading zero
-            # Generate the first image
-            text_elements_1 = [
-                {"text": serial, "x": 740, "y": 390, "font_path": "static/fonts/Arimo-VariableFont_wght.ttf", 
-                 "font_size": 6, "text_color": "#740022", "alpha": 1, "noise": True},
-                {"text": customer_name, "x": 550, "y": 550, "font_path": "static/fonts/Dima Font.ttf", 
-                 "font_size": 5, "text_color": "#140a72", "alpha": 1, "noise": True},
-                {"text": customer_name, "x": 325, "y": 700, "font_path": "static/fonts/Dima Font.ttf", 
-                 "font_size": 4, "text_color": "#140a72", "alpha": 1, "noise": True},
-                {"text": customer_name, "x": 340, "y": 760, "font_path": "static/fonts/alfont_com_Digi-Maryam-Regular.ttf", 
-                 "font_size": 6, "text_color": "#140a72", "alpha": 1, "noise": True},
-                {"text": sales_name, "x": 150, "y": 700, "font_path": "static/fonts/Dima Font.ttf", 
-                 "font_size": 4, "text_color": "#140a72", "alpha": 1, "noise": True},
-                {"text": sales_name, "x": 140, "y": 755, "font_path": "static/fonts/alfont_com_Digi-Maryam-Regular.ttf", 
-                 "font_size": 7, "text_color": "#140a72", "alpha": 1, "noise": True},
-                {"text": nationality, "x": 790, "y": 590, "font_path": "static/fonts/Dima Font.ttf", 
-                 "font_size": 5.5, "text_color": "#140a72", "alpha": 1, "noise": True},
-                {"text": national_id, "x": 630, "y": 748, "font_path": "static/fonts/Molhim.ttf", 
-                 "font_size": 5.9, "text_color": "#140a72", "alpha": 1, "noise": True, "letter_spacing": 21},
-                {"text": phone_num, "x": 550, "y": 960, "font_path": "static/fonts/Molhim.ttf", 
-                 "font_size": 6, "text_color": "#140a72", "alpha": 1, "noise": True},
-                {"text": phone_num, "x": 680, "y": 1400, "font_path": "static/fonts/Molhim.ttf", 
-                 "font_size": 7, "text_color": "#140a72", "alpha": 1, "noise": True},
-                {"text": landline, "x": 870, "y": 975, "font_path": "static/fonts/Molhim.ttf", 
-                 "font_size": 5, "text_color": "#140a72", "alpha": 1, "noise": True},
-                {"text": landline, "x": 160, "y": 390, "font_path": "static/fonts/Molhim.ttf", 
-                 "font_size": 8.5, "text_color": "#140a72", "alpha": 1, "noise": True},
-                {"text": landline, "x": 690, "y": 1220, "font_path": "static/fonts/Molhim.ttf", 
-                 "font_size": 7, "text_color": "#140a72", "alpha": 1, "noise": True},
-                {"text": central, "x": 720, "y": 1350, "font_path": "static/fonts/Dima Font.ttf", 
-                 "font_size": 6, "text_color": "#140a72", "alpha": 1, "noise": True},
-                {"text": quota, "x": 420, "y": 560, "font_path": "static/fonts/Caveat-Regular.ttf", 
-                 "font_size": 6, "text_color": "#140a72", "alpha": 1, "noise": True},
-                {"text": price, "x": 320, "y": 560, "font_path": "static/fonts/Caveat-Regular.ttf", 
-                 "font_size": 7, "text_color": "#140a72", "alpha": 1, "noise": True},
-                {"text": formatted_date, "x": 380, "y": 800, "font_path": "static/fonts/Molhim.ttf", 
-                 "font_size": 5, "text_color": "#140a72", "alpha": 1, "noise": True},
-                {"text": formatted_date, "x": 160, "y": 795, "font_path": "static/fonts/Molhim.ttf", 
-                 "font_size": 5, "text_color": "#140a72", "alpha": 1, "noise": True},
-            ]
-
-            # Add '/' based on payment frequency selection
-            if payment_frequency == "month":
-                text_elements_1.append({"text": "/", "x": 400, "y": 610, "font_path": "static/fonts/Dima Font.ttf", 
-                                     "font_size": 6, "text_color": "#140a72", "alpha": 1, "noise": True})
-            elif payment_frequency == "6_months":
-                text_elements_1.append({"text": "/", "x": 335, "y": 610, "font_path": "static/fonts/Dima Font.ttf", 
-                                     "font_size": 6, "text_color": "#140a72", "alpha": 1, "noise": True})
-            elif payment_frequency == "12_months":
-                text_elements_1.append({"text": "/", "x": 250, "y": 610, "font_path": "static/fonts/Dima Font.ttf", 
-                                     "font_size": 6, "text_color": "#140a72", "alpha": 1, "noise": True})
-
-            # Generate the first image
-            output_path_1 = os.path.join(app.config['UPLOAD_FOLDER'], 'output_1.jpg')
-            generate_image_1(BASE_IMAGE_PATH_1, text_elements_1, output_path_1)
-
-            # Generate the second image
-            img_buffer_2 = generate_image_2(BASE_IMAGE_PATH_2, stamp_image_path, front_id_path, back_id_path, customer_name, central, date, landline)
-            output_path_2 = os.path.join(app.config['UPLOAD_FOLDER'], 'output_2.jpg')
-            with open(output_path_2, 'wb') as f:
-                f.write(img_buffer_2.getvalue())
-
-            return render_template('index.html', image_generated=True, image_path_1='uploads/output_1.jpg', image_path_2='uploads/output_2.jpg')
-
-        except Exception as e:
-            return f"An error occurred: {str(e)}", 500
-
-    return render_template('index.html', image_generated=False)
-
-@app.route('/download/<filename>')
-def download(filename):
-    return send_file(os.path.join(app.config['UPLOAD_FOLDER'], filename), as_attachment=True)
 
 if __name__ == '__main__':
-    app.run(debug=True, use_reloader=True,port=8000)
+    app.run(debug=True)
